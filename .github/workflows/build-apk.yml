@@ -43,14 +43,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Download ZIP Project
+      - name: Download & Extract ZIP
         run: |
           echo "Mengunduh project ZIP..."
           curl -L "${{ github.event.inputs.zip_url }}" -o project.zip
           echo "Ukuran ZIP: $(du -sh project.zip | cut -f1)"
-
-      - name: Extract ZIP
-        run: |
           mkdir -p project_src
           unzip -q project.zip -d project_src
           PUBSPEC=$(find project_src -name "pubspec.yaml" | head -1)
@@ -59,29 +56,27 @@ jobs:
             exit 1
           fi
           PROJECT_DIR=$(dirname "$PUBSPEC")
+          PROJECT_DIR=$(realpath "$PROJECT_DIR")
           echo "Project ditemukan di: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
       - name: Flutter pub get
         run: |
+          echo "Project dir: $PROJECT_DIR"
           cd "$PROJECT_DIR"
           flutter pub get
 
-      - name: Build APK Debug
-        if: ${{ github.event.inputs.mode == 'debug' }}
+      - name: Build APK
         run: |
           cd "$PROJECT_DIR"
-          flutter build apk --debug --no-tree-shake-icons
-          APK_PATH=$(find "$PROJECT_DIR" -name "app-debug.apk" | head -1)
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "APK ditemukan: $APK_PATH"
-
-      - name: Build APK Release
-        if: ${{ github.event.inputs.mode == 'release' }}
-        run: |
-          cd "$PROJECT_DIR"
-          flutter build apk --release --no-tree-shake-icons
-          APK_PATH=$(find "$PROJECT_DIR" -name "app-release.apk" | head -1)
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "$MODE" = "release" ]; then
+            flutter build apk --release --no-tree-shake-icons
+            APK_PATH=$(find "$PROJECT_DIR" -name "app-release.apk" | head -1)
+          else
+            flutter build apk --debug --no-tree-shake-icons
+            APK_PATH=$(find "$PROJECT_DIR" -name "app-debug.apk" | head -1)
+          fi
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "APK ditemukan: $APK_PATH"
 
@@ -108,15 +103,12 @@ jobs:
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${CHAT_ID}" \
-            -d "text=${NOTIF_TEXT}" \
-            -d "parse_mode=Markdown"
-
-          CAPTION="📦 ${APP_NAME} - ${MODE}%0AUkuran: ${APK_SIZE}%0A✅ Build via GitHub Actions"
+            -d "text=${NOTIF_TEXT}"
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
             -F "chat_id=${CHAT_ID}" \
             -F "document=@${FINAL_APK}" \
-            -F "caption=${CAPTION}"
+            -F "caption=📦 ${APP_NAME} - ${MODE} | ${APK_SIZE} | ✅ GitHub Actions"
 
       - name: Kirim Notif Gagal ke Telegram
         if: failure()
@@ -126,7 +118,7 @@ jobs:
           APP_NAME="${{ github.event.inputs.app_name }}"
           MODE="${{ github.event.inputs.mode }}"
 
-          FAIL_TEXT="❌ Build Gagal!%0AApp: ${APP_NAME}%0AMode: ${MODE}%0A%0ACek log di GitHub Actions untuk detail error.%0ACredit dikembalikan otomatis."
+          FAIL_TEXT="❌ Build Gagal!%0AApp: ${APP_NAME}%0AMode: ${MODE}%0A%0ACek log GitHub Actions untuk detail error.%0ACredit dikembalikan otomatis."
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d "chat_id=${CHAT_ID}" \
